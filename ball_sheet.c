@@ -13,6 +13,12 @@
 #define RESTORING_FORCE 0.01
 #define CLICK_RADIUS 10
 
+// Color variables
+// SDL_Color backgroundColor = {0, 0, 0, 255};
+// SDL_Color dotColor = {255, 255, 255, 255};
+SDL_Color backgroundColor = {0, 0, 0, 255};
+SDL_Color dotColor = {203, 170, 203, 255};              // Pastel Purple
+
 typedef struct {
     float x, y;
     float vx, vy;
@@ -92,7 +98,7 @@ void update_dots() {
 }
 
 void render_dots(SDL_Renderer *renderer) {
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_SetRenderDrawColor(renderer, dotColor.r, dotColor.g, dotColor.b, dotColor.a);
     for (int row = 0; row < GRID_ROWS; row++) {
         for (int col = 0; col < GRID_COLS; col++) {
             for (int w = 0; w < DOT_RADIUS * 2; w++) {
@@ -172,7 +178,7 @@ int main() {
 
         update_dots();
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_SetRenderDrawColor(renderer, backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
         SDL_RenderClear(renderer);
         render_dots(renderer);
         SDL_RenderPresent(renderer);
