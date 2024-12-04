@@ -1,6 +1,7 @@
 #include <SDL2/SDL.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #define WIDTH 800
 #define HEIGHT 600
@@ -111,6 +112,7 @@ void handle_mouse_event(SDL_Event *event) {
     SDL_GetMouseState(&x, &y);
 
     if (event->type == SDL_MOUSEBUTTONDOWN) {
+        printf("Mouse button down at (%d, %d)\n", x, y);
         for (int row = 0; row < GRID_ROWS; row++) {
             for (int col = 0; col < GRID_COLS; col++) {
                 float dx = x - dots[row][col].x;
@@ -120,6 +122,7 @@ void handle_mouse_event(SDL_Event *event) {
                     drag_row = row;
                     drag_col = col;
                     dots[row][col].fixed = true;
+                    printf("Started dragging dot at (%d, %d)\n", row, col);
                     return;
                 }
             }
@@ -128,11 +131,13 @@ void handle_mouse_event(SDL_Event *event) {
         if (dragging) {
             dots[drag_row][drag_col].fixed = false;
             dragging = false;
+            printf("Stopped dragging dot at (%d, %d)\n", drag_row, drag_col);
         }
     } else if (event->type == SDL_MOUSEMOTION) {
         if (dragging) {
             dots[drag_row][drag_col].x = x;
             dots[drag_row][drag_col].y = y;
+            printf("Dragging dot to (%d, %d)\n", x, y);
         }
     }
 }
