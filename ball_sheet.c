@@ -12,6 +12,7 @@
 #define SPRING_CONSTANT 0.2
 #define DAMPING 0.9
 #define RESTORING_FORCE 0.01
+#define CLICK_RADIUS 10 // Larger clickable area around each dot
 
 typedef struct {
     float x, y;
@@ -37,7 +38,6 @@ void initialize_dots() {
             dots[row][col].fixed = false;
         }
     }
-    // Fix the top-left and top-right dots for stability
     dots[0][0].fixed = true;
     dots[0][GRID_COLS - 1].fixed = true;
 }
@@ -117,7 +117,7 @@ void handle_mouse_event(SDL_Event *event) {
             for (int col = 0; col < GRID_COLS; col++) {
                 float dx = x - dots[row][col].x;
                 float dy = y - dots[row][col].y;
-                if (sqrtf(dx * dx + dy * dy) < DOT_RADIUS) {
+                if (sqrtf(dx * dx + dy * dy) < CLICK_RADIUS) {
                     dragging = true;
                     drag_row = row;
                     drag_col = col;
