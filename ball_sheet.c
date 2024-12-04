@@ -1,7 +1,6 @@
 #include <SDL2/SDL.h>
 #include <math.h>
 #include <stdbool.h>
-#include <stdio.h>
 
 #define WIDTH 800
 #define HEIGHT 600
@@ -12,7 +11,7 @@
 #define SPRING_CONSTANT 0.2
 #define DAMPING 0.9
 #define RESTORING_FORCE 0.01
-#define CLICK_RADIUS 10 // Larger clickable area around each dot
+#define CLICK_RADIUS 10
 
 typedef struct {
     float x, y;
@@ -96,13 +95,15 @@ void render_dots(SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     for (int row = 0; row < GRID_ROWS; row++) {
         for (int col = 0; col < GRID_COLS; col++) {
-            SDL_Rect rect = {
-                (int)(dots[row][col].x - DOT_RADIUS),
-                (int)(dots[row][col].y - DOT_RADIUS),
-                DOT_RADIUS * 2,
-                DOT_RADIUS * 2
-            };
-            SDL_RenderFillRect(renderer, &rect);
+            for (int w = 0; w < DOT_RADIUS * 2; w++) {
+                for (int h = 0; h < DOT_RADIUS * 2; h++) {
+                    int dx = DOT_RADIUS - w;
+                    int dy = DOT_RADIUS - h;
+                    if ((dx*dx + dy*dy) <= (DOT_RADIUS * DOT_RADIUS)) {
+                        SDL_RenderDrawPoint(renderer, dots[row][col].x + dx, dots[row][col].y + dy);
+                    }
+                }
+            }
         }
     }
 }
@@ -112,7 +113,6 @@ void handle_mouse_event(SDL_Event *event) {
     SDL_GetMouseState(&x, &y);
 
     if (event->type == SDL_MOUSEBUTTONDOWN) {
-        printf("Mouse button down at (%d, %d)\n", x, y);
         for (int row = 0; row < GRID_ROWS; row++) {
             for (int col = 0; col < GRID_COLS; col++) {
                 float dx = x - dots[row][col].x;
@@ -122,7 +122,6 @@ void handle_mouse_event(SDL_Event *event) {
                     drag_row = row;
                     drag_col = col;
                     dots[row][col].fixed = true;
-                    printf("Started dragging dot at (%d, %d)\n", row, col);
                     return;
                 }
             }
@@ -131,13 +130,11 @@ void handle_mouse_event(SDL_Event *event) {
         if (dragging) {
             dots[drag_row][drag_col].fixed = false;
             dragging = false;
-            printf("Stopped dragging dot at (%d, %d)\n", drag_row, drag_col);
         }
     } else if (event->type == SDL_MOUSEMOTION) {
         if (dragging) {
             dots[drag_row][drag_col].x = x;
             dots[drag_row][drag_col].y = y;
-            printf("Dragging dot to (%d, %d)\n", x, y);
         }
     }
 }
@@ -180,7 +177,7 @@ int main() {
         render_dots(renderer);
         SDL_RenderPresent(renderer);
 
-        SDL_Delay(16); // ~60 FPS
+        SDL_Delay(16);
     }
 
     SDL_DestroyRenderer(renderer);
