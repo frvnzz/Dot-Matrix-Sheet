@@ -13,16 +13,11 @@
 #define RESTORING_FORCE 0.01
 #define CLICK_RADIUS 10
 
-// Color variables
-// SDL_Color backgroundColor = {0, 0, 0, 255};
-// SDL_Color dotColor = {255, 255, 255, 255};
 SDL_Color backgroundColor = {0, 0, 0, 255};
-SDL_Color dotColor = {203, 170, 203, 255};              // Pastel Purple
+SDL_Color dotColor = {203, 170, 203, 255};
 
 typedef struct {
-    float x, y;
-    float vx, vy;
-    float original_x, original_y;
+    float x, y, vx, vy, original_x, original_y;
     bool fixed;
 } Dot;
 
@@ -36,39 +31,25 @@ void initialize_dots() {
 
     for (int row = 0; row < GRID_ROWS; row++) {
         for (int col = 0; col < GRID_COLS; col++) {
-            dots[row][col].x = dots[row][col].original_x = startX + col * SPRING_LENGTH;
-            dots[row][col].y = dots[row][col].original_y = startY + row * SPRING_LENGTH;
-            dots[row][col].vx = 0;
-            dots[row][col].vy = 0;
-            dots[row][col].fixed = false;
+            dots[row][col] = (Dot){startX + col * SPRING_LENGTH, startY + row * SPRING_LENGTH, 0, 0, startX + col * SPRING_LENGTH, startY + row * SPRING_LENGTH, false};
         }
     }
-    dots[0][0].fixed = true;
-    dots[0][GRID_COLS - 1].fixed = true;
+    dots[0][0].fixed = dots[0][GRID_COLS - 1].fixed = true;
 }
 
 void apply_spring(Dot *a, Dot *b) {
-    float dx = b->x - a->x;
-    float dy = b->y - a->y;
+    float dx = b->x - a->x, dy = b->y - a->y;
     float distance = sqrtf(dx * dx + dy * dy);
     float force = (distance - SPRING_LENGTH) * SPRING_CONSTANT;
-    float fx = force * (dx / distance);
-    float fy = force * (dy / distance);
+    float fx = force * (dx / distance), fy = force * (dy / distance);
 
-    if (!a->fixed) {
-        a->vx += fx;
-        a->vy += fy;
-    }
-    if (!b->fixed) {
-        b->vx -= fx;
-        b->vy -= fy;
-    }
+    if (!a->fixed) { a->vx += fx; a->vy += fy; }
+    if (!b->fixed) { b->vx -= fx; b->vy -= fy; }
 }
 
 void apply_restoring_force(Dot *dot) {
     if (!dot->fixed) {
-        float dx = dot->original_x - dot->x;
-        float dy = dot->original_y - dot->y;
+        float dx = dot->original_x - dot->x, dy = dot->original_y - dot->y;
         dot->vx += dx * RESTORING_FORCE;
         dot->vy += dy * RESTORING_FORCE;
     }
@@ -103,9 +84,8 @@ void render_dots(SDL_Renderer *renderer) {
         for (int col = 0; col < GRID_COLS; col++) {
             for (int w = 0; w < DOT_RADIUS * 2; w++) {
                 for (int h = 0; h < DOT_RADIUS * 2; h++) {
-                    int dx = DOT_RADIUS - w;
-                    int dy = DOT_RADIUS - h;
-                    if ((dx*dx + dy*dy) <= (DOT_RADIUS * DOT_RADIUS)) {
+                    int dx = DOT_RADIUS - w, dy = DOT_RADIUS - h;
+                    if ((dx * dx + dy * dy) <= (DOT_RADIUS * DOT_RADIUS)) {
                         SDL_RenderDrawPoint(renderer, dots[row][col].x + dx, dots[row][col].y + dy);
                     }
                 }
@@ -121,8 +101,7 @@ void handle_mouse_event(SDL_Event *event) {
     if (event->type == SDL_MOUSEBUTTONDOWN) {
         for (int row = 0; row < GRID_ROWS; row++) {
             for (int col = 0; col < GRID_COLS; col++) {
-                float dx = x - dots[row][col].x;
-                float dy = y - dots[row][col].y;
+                float dx = x - dots[row][col].x, dy = y - dots[row][col].y;
                 if (sqrtf(dx * dx + dy * dy) < CLICK_RADIUS) {
                     dragging = true;
                     drag_row = row;
@@ -132,36 +111,23 @@ void handle_mouse_event(SDL_Event *event) {
                 }
             }
         }
-    } else if (event->type == SDL_MOUSEBUTTONUP) {
-        if (dragging) {
-            dots[drag_row][drag_col].fixed = false;
-            dragging = false;
-        }
-    } else if (event->type == SDL_MOUSEMOTION) {
-        if (dragging) {
-            dots[drag_row][drag_col].x = x;
-            dots[drag_row][drag_col].y = y;
-        }
+    } else if (event->type == SDL_MOUSEBUTTONUP && dragging) {
+        dots[drag_row][drag_col].fixed = false;
+        dragging = false;
+    } else if (event->type == SDL_MOUSEMOTION && dragging) {
+        dots[drag_row][drag_col].x = x;
+        dots[drag_row][drag_col].y = y;
     }
 }
 
 int main() {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        return 1;
-    }
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) return 1;
 
-    SDL_Window *window = SDL_CreateWindow("Dot Sheet", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
-    if (!window) {
-        SDL_Quit();
-        return 1;
-    }
+    SDL_Window *window = SDL_CreateWindow("Dot Matrix Sheet", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
+    if (!window) { SDL_Quit(); return 1; }
 
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (!renderer) {
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
+    if (!renderer) { SDL_DestroyWindow(window); SDL_Quit(); return 1; }
 
     initialize_dots();
 
@@ -169,11 +135,8 @@ int main() {
     SDL_Event event;
     while (running) {
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
-                running = false;
-            } else {
-                handle_mouse_event(&event);
-            }
+            if (event.type == SDL_QUIT) running = false;
+            else handle_mouse_event(&event);
         }
 
         update_dots();
@@ -189,6 +152,5 @@ int main() {
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
-
     return 0;
 }
