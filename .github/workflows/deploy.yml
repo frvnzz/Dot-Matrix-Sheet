@@ -34,32 +34,18 @@ jobs:
 
             - name: Build WebAssembly
               run: |
-                  emcc dot_matrix_sheet.c -o dot_matrix_sheet.html \
+                  emcc dot_matrix_sheet.c -o index.html \
                     -s USE_SDL=2 \
                     -s WASM=1 \
                     -s ALLOW_MEMORY_GROWTH=1 \
-                    -O3 \
-                    --shell-file shell_minimal.html
-
-            - name: Create index.html (fallback if no shell file)
-              run: |
-                  if [ ! -f shell_minimal.html ]; then
-                    emcc dot_matrix_sheet.c -o index.html \
-                      -s USE_SDL=2 \
-                      -s WASM=1 \
-                      -s ALLOW_MEMORY_GROWTH=1 \
-                      -O3
-                  else
-                    mv dot_matrix_sheet.html index.html
-                  fi
+                    -O3
 
             - name: Create deployment directory
               run: |
                   mkdir -p dist
-                  cp index.html dist/ || cp dot_matrix_sheet.html dist/index.html
-                  cp dot_matrix_sheet.js dist/ 2>/dev/null || true
-                  cp dot_matrix_sheet.wasm dist/ 2>/dev/null || true
-                  cp *.data dist/ 2>/dev/null || true
+                  cp index.html dist/
+                  cp index.js dist/
+                  cp index.wasm dist/
                   ls -la dist/
 
             - name: Setup Pages
