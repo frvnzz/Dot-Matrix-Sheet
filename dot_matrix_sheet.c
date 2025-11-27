@@ -1,156 +1,429 @@
 #include <SDL2/SDL.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdio.h>
 
-#define WIDTH 800
-#define HEIGHT 600
-#define DOT_RADIUS 2
+/* Window config */
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 600
+#define WINDOW_TITLE "Dot Matrix Sheet"
+
+/* Grid config */
 #define GRID_ROWS 30
 #define GRID_COLS 40
-#define SPRING_LENGTH 15
-#define SPRING_CONSTANT 0.2
-#define DAMPING 0.9
-#define RESTORING_FORCE 0.01
-#define CLICK_RADIUS 10
+#define DOT_RADIUS 2
 
-SDL_Color backgroundColor = {0, 0, 0, 255};
-SDL_Color dotColor = {203, 170, 203, 255};
+/* Physics constants */
+#define SPRING_REST_LENGTH 15
+#define SPRING_STIFFNESS 0.2
+#define VELOCITY_DAMPING 0.9
+#define RESTORING_FORCE_STRENGTH 0.01
 
-typedef struct {
-    float x, y, vx, vy, original_x, original_y;
-    bool fixed;
+/* Interaction constants */
+#define CLICK_DETECTION_RADIUS 10
+#define FRAME_DELAY_MS 16
+
+/* Visual config */
+#define BACKGROUND_COLOR_R 0
+#define BACKGROUND_COLOR_G 0
+#define BACKGROUND_COLOR_B 0
+#define BACKGROUND_COLOR_A 255
+
+#define DOT_COLOR_R 203
+#define DOT_COLOR_G 170
+#define DOT_COLOR_B 203
+#define DOT_COLOR_A 255
+
+/* Type Definitions */
+
+/**
+ * Represents a single dot in the grid with position, velocity, and state.
+ */
+typedef struct
+{
+    float x;          /* Current x position */
+    float y;          /* Current y position */
+    float vx;         /* Velocity in x direction */
+    float vy;         /* Velocity in y direction */
+    float original_x; /* Original x position (rest state) */
+    float original_y; /* Original y position (rest state) */
+    bool fixed;       /* Whether the dot is fixed in place */
 } Dot;
 
-Dot dots[GRID_ROWS][GRID_COLS];
-bool dragging = false;
-int drag_row = -1, drag_col = -1;
+/**
+ * Manages the state of mouse dragging interaction.
+ */
+typedef struct
+{
+    bool is_dragging;
+    int row;
+    int col;
+} DragState;
 
-void initialize_dots() {
-    float startX = (WIDTH - (GRID_COLS - 1) * SPRING_LENGTH) / 2;
-    float startY = (HEIGHT - (GRID_ROWS - 1) * SPRING_LENGTH) / 2;
+/* Global State */
+static Dot g_dots[GRID_ROWS][GRID_COLS];
+static DragState g_drag_state = {false, -1, -1};
 
-    for (int row = 0; row < GRID_ROWS; row++) {
-        for (int col = 0; col < GRID_COLS; col++) {
-            dots[row][col] = (Dot){startX + col * SPRING_LENGTH, startY + row * SPRING_LENGTH, 0, 0, startX + col * SPRING_LENGTH, startY + row * SPRING_LENGTH, false};
+/* Function Prototypes */
+static void initialize_grid(void);
+static void apply_spring_force(Dot *dot_a, Dot *dot_b);
+static void apply_restoring_force(Dot *dot);
+static void update_physics(void);
+static void render_grid(SDL_Renderer *renderer);
+static void handle_mouse_event(const SDL_Event *event);
+static bool find_dot_at_position(int mouse_x, int mouse_y, int *row, int *col);
+static void draw_filled_circle(SDL_Renderer *renderer, int center_x, int center_y, int radius);
+
+/**
+ * Initializes the dot grid with evenly spaced dots centered in the window.
+ * Sets the top-left and top-right corner dots as fixed anchor points.
+ */
+static void initialize_grid(void)
+{
+    const float start_x = (WINDOW_WIDTH - (GRID_COLS - 1) * SPRING_REST_LENGTH) / 2.0f;
+    const float start_y = (WINDOW_HEIGHT - (GRID_ROWS - 1) * SPRING_REST_LENGTH) / 2.0f;
+
+    for (int row = 0; row < GRID_ROWS; row++)
+    {
+        for (int col = 0; col < GRID_COLS; col++)
+        {
+            const float pos_x = start_x + col * SPRING_REST_LENGTH;
+            const float pos_y = start_y + row * SPRING_REST_LENGTH;
+
+            g_dots[row][col] = (Dot){
+                .x = pos_x,
+                .y = pos_y,
+                .vx = 0.0f,
+                .vy = 0.0f,
+                .original_x = pos_x,
+                .original_y = pos_y,
+                .fixed = false};
         }
     }
-    dots[0][0].fixed = dots[0][GRID_COLS - 1].fixed = true;
+
+    /* Fix the top corners as anchor points */
+    g_dots[0][0].fixed = true;
+    g_dots[0][GRID_COLS - 1].fixed = true;
 }
 
-void apply_spring(Dot *a, Dot *b) {
-    float dx = b->x - a->x, dy = b->y - a->y;
-    float distance = sqrtf(dx * dx + dy * dy);
-    float force = (distance - SPRING_LENGTH) * SPRING_CONSTANT;
-    float fx = force * (dx / distance), fy = force * (dy / distance);
+/**
+ * Applies spring force between two connected dots using Hooke's Law.
+ * The force is proportional to the displacement from the rest length.
+ *
+ * @param dot_a First dot
+ * @param dot_b Second dot connected to first dot
+ */
+static void apply_spring_force(Dot *dot_a, Dot *dot_b)
+{
+    const float dx = dot_b->x - dot_a->x;
+    const float dy = dot_b->y - dot_a->y;
+    const float distance = sqrtf(dx * dx + dy * dy);
 
-    if (!a->fixed) { a->vx += fx; a->vy += fy; }
-    if (!b->fixed) { b->vx -= fx; b->vy -= fy; }
-}
+    if (distance < 0.001f)
+    {
+        return; /* Avoid division by zero */
+    }
 
-void apply_restoring_force(Dot *dot) {
-    if (!dot->fixed) {
-        float dx = dot->original_x - dot->x, dy = dot->original_y - dot->y;
-        dot->vx += dx * RESTORING_FORCE;
-        dot->vy += dy * RESTORING_FORCE;
+    const float displacement = distance - SPRING_REST_LENGTH;
+    const float force_magnitude = displacement * SPRING_STIFFNESS;
+    const float fx = force_magnitude * (dx / distance);
+    const float fy = force_magnitude * (dy / distance);
+
+    if (!dot_a->fixed)
+    {
+        dot_a->vx += fx;
+        dot_a->vy += fy;
+    }
+
+    if (!dot_b->fixed)
+    {
+        dot_b->vx -= fx;
+        dot_b->vy -= fy;
     }
 }
 
-void update_dots() {
-    for (int row = 0; row < GRID_ROWS; row++) {
-        for (int col = 0; col < GRID_COLS; col++) {
-            if (!dots[row][col].fixed) {
-                dots[row][col].vx *= DAMPING;
-                dots[row][col].vy *= DAMPING;
-                dots[row][col].x += dots[row][col].vx;
-                dots[row][col].y += dots[row][col].vy;
-                apply_restoring_force(&dots[row][col]);
+/**
+ * Applies a gentle force that pulls the dot back toward its original position.
+ * This helps the grid return to its rest state after being disturbed.
+ *
+ * @param dot The dot to apply restoring force to
+ */
+static void apply_restoring_force(Dot *dot)
+{
+    if (dot->fixed)
+    {
+        return;
+    }
+
+    const float dx = dot->original_x - dot->x;
+    const float dy = dot->original_y - dot->y;
+
+    dot->vx += dx * RESTORING_FORCE_STRENGTH;
+    dot->vy += dy * RESTORING_FORCE_STRENGTH;
+}
+
+/**
+ * Updates all dots' positions and velocities based on physics simulation.
+ * First applies damping and integrates velocity, then applies spring and restoring forces.
+ */
+static void update_physics(void)
+{
+    /* Update positions and apply damping */
+    for (int row = 0; row < GRID_ROWS; row++)
+    {
+        for (int col = 0; col < GRID_COLS; col++)
+        {
+            Dot *dot = &g_dots[row][col];
+
+            if (!dot->fixed)
+            {
+                dot->vx *= VELOCITY_DAMPING;
+                dot->vy *= VELOCITY_DAMPING;
+                dot->x += dot->vx;
+                dot->y += dot->vy;
+                apply_restoring_force(dot);
             }
         }
     }
 
-    for (int row = 0; row < GRID_ROWS; row++) {
-        for (int col = 0; col < GRID_COLS; col++) {
-            if (row > 0) apply_spring(&dots[row][col], &dots[row - 1][col]);
-            if (row < GRID_ROWS - 1) apply_spring(&dots[row][col], &dots[row + 1][col]);
-            if (col > 0) apply_spring(&dots[row][col], &dots[row][col - 1]);
-            if (col < GRID_COLS - 1) apply_spring(&dots[row][col], &dots[row][col + 1]);
-        }
-    }
-}
+    /* Apply spring forces between connected dots */
+    for (int row = 0; row < GRID_ROWS; row++)
+    {
+        for (int col = 0; col < GRID_COLS; col++)
+        {
+            Dot *current = &g_dots[row][col];
 
-void render_dots(SDL_Renderer *renderer) {
-    SDL_SetRenderDrawColor(renderer, dotColor.r, dotColor.g, dotColor.b, dotColor.a);
-    for (int row = 0; row < GRID_ROWS; row++) {
-        for (int col = 0; col < GRID_COLS; col++) {
-            for (int w = 0; w < DOT_RADIUS * 2; w++) {
-                for (int h = 0; h < DOT_RADIUS * 2; h++) {
-                    int dx = DOT_RADIUS - w, dy = DOT_RADIUS - h;
-                    if ((dx * dx + dy * dy) <= (DOT_RADIUS * DOT_RADIUS)) {
-                        SDL_RenderDrawPoint(renderer, dots[row][col].x + dx, dots[row][col].y + dy);
-                    }
-                }
+            /* Connect to neighboring dots (up, down, left, right) */
+            if (row > 0)
+            {
+                apply_spring_force(current, &g_dots[row - 1][col]);
+            }
+            if (row < GRID_ROWS - 1)
+            {
+                apply_spring_force(current, &g_dots[row + 1][col]);
+            }
+            if (col > 0)
+            {
+                apply_spring_force(current, &g_dots[row][col - 1]);
+            }
+            if (col < GRID_COLS - 1)
+            {
+                apply_spring_force(current, &g_dots[row][col + 1]);
             }
         }
     }
 }
 
-void handle_mouse_event(SDL_Event *event) {
-    int x, y;
-    SDL_GetMouseState(&x, &y);
-
-    if (event->type == SDL_MOUSEBUTTONDOWN) {
-        for (int row = 0; row < GRID_ROWS; row++) {
-            for (int col = 0; col < GRID_COLS; col++) {
-                float dx = x - dots[row][col].x, dy = y - dots[row][col].y;
-                if (sqrtf(dx * dx + dy * dy) < CLICK_RADIUS) {
-                    dragging = true;
-                    drag_row = row;
-                    drag_col = col;
-                    dots[row][col].fixed = true;
-                    return;
-                }
+/**
+ * Draws a filled circle using the midpoint circle algorithm.
+ *
+ * @param renderer SDL renderer to draw with
+ * @param center_x X coordinate of circle center
+ * @param center_y Y coordinate of circle center
+ * @param radius Radius of the circle in pixels
+ */
+static void draw_filled_circle(SDL_Renderer *renderer, int center_x, int center_y, int radius)
+{
+    for (int w = 0; w < radius * 2; w++)
+    {
+        for (int h = 0; h < radius * 2; h++)
+        {
+            const int dx = radius - w;
+            const int dy = radius - h;
+            if ((dx * dx + dy * dy) <= (radius * radius))
+            {
+                SDL_RenderDrawPoint(renderer, center_x + dx, center_y + dy);
             }
         }
-    } else if (event->type == SDL_MOUSEBUTTONUP && dragging) {
-        dots[drag_row][drag_col].fixed = false;
-        dragging = false;
-    } else if (event->type == SDL_MOUSEMOTION && dragging) {
-        dots[drag_row][drag_col].x = x;
-        dots[drag_row][drag_col].y = y;
     }
 }
 
-int main() {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) return 1;
+/**
+ * Renders all dots in the grid as filled circles.
+ *
+ * @param renderer SDL renderer to draw with
+ */
+static void render_grid(SDL_Renderer *renderer)
+{
+    SDL_SetRenderDrawColor(renderer, DOT_COLOR_R, DOT_COLOR_G, DOT_COLOR_B, DOT_COLOR_A);
 
-    SDL_Window *window = SDL_CreateWindow("Dot Matrix Sheet", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
-    if (!window) { SDL_Quit(); return 1; }
+    for (int row = 0; row < GRID_ROWS; row++)
+    {
+        for (int col = 0; col < GRID_COLS; col++)
+        {
+            const Dot *dot = &g_dots[row][col];
+            draw_filled_circle(renderer, (int)dot->x, (int)dot->y, DOT_RADIUS);
+        }
+    }
+}
 
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (!renderer) { SDL_DestroyWindow(window); SDL_Quit(); return 1; }
+/**
+ * Finds the dot closest to the given mouse position within the click radius.
+ *
+ * @param mouse_x Mouse X coordinate
+ * @param mouse_y Mouse Y coordinate
+ * @param row Output parameter for the row of the found dot
+ * @param col Output parameter for the column of the found dot
+ * @return true if a dot was found, false otherwise
+ */
+static bool find_dot_at_position(int mouse_x, int mouse_y, int *row, int *col)
+{
+    for (int r = 0; r < GRID_ROWS; r++)
+    {
+        for (int c = 0; c < GRID_COLS; c++)
+        {
+            const float dx = mouse_x - g_dots[r][c].x;
+            const float dy = mouse_y - g_dots[r][c].y;
+            const float distance = sqrtf(dx * dx + dy * dy);
 
-    initialize_dots();
+            if (distance < CLICK_DETECTION_RADIUS)
+            {
+                *row = r;
+                *col = c;
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
+/**
+ * Handles mouse events for dragging dots.
+ * Users can click and drag dots to move them, creating wave effects in the grid.
+ *
+ * @param event SDL event to process
+ */
+static void handle_mouse_event(const SDL_Event *event)
+{
+    int mouse_x, mouse_y;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+
+    switch (event->type)
+    {
+    case SDL_MOUSEBUTTONDOWN:
+    {
+        int row, col;
+        if (find_dot_at_position(mouse_x, mouse_y, &row, &col))
+        {
+            g_drag_state.is_dragging = true;
+            g_drag_state.row = row;
+            g_drag_state.col = col;
+            g_dots[row][col].fixed = true;
+        }
+        break;
+    }
+
+    case SDL_MOUSEBUTTONUP:
+        if (g_drag_state.is_dragging)
+        {
+            g_dots[g_drag_state.row][g_drag_state.col].fixed = false;
+            g_drag_state.is_dragging = false;
+        }
+        break;
+
+    case SDL_MOUSEMOTION:
+        if (g_drag_state.is_dragging)
+        {
+            g_dots[g_drag_state.row][g_drag_state.col].x = mouse_x;
+            g_dots[g_drag_state.row][g_drag_state.col].y = mouse_y;
+        }
+        break;
+
+    default:
+        break;
+    }
+}
+
+/**
+ * Main entry point for the Dot Matrix Sheet simulation.
+ * Initializes SDL, creates the window and renderer, runs the main loop,
+ * and cleans up resources on exit.
+ *
+ * @return EXIT_SUCCESS on successful execution, EXIT_FAILURE on error
+ */
+int main(void)
+{
+    /* Initialize SDL video subsystem */
+    if (SDL_Init(SDL_INIT_VIDEO) < 0)
+    {
+        fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
+        return EXIT_FAILURE;
+    }
+
+    /* Create window */
+    SDL_Window *window = SDL_CreateWindow(
+        WINDOW_TITLE,
+        SDL_WINDOWPOS_UNDEFINED,
+        SDL_WINDOWPOS_UNDEFINED,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        SDL_WINDOW_SHOWN);
+
+    if (!window)
+    {
+        fprintf(stderr, "Window creation failed: %s\n", SDL_GetError());
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
+
+    /* Create renderer with hardware acceleration */
+    SDL_Renderer *renderer = SDL_CreateRenderer(
+        window,
+        -1,
+        SDL_RENDERER_ACCELERATED);
+
+    if (!renderer)
+    {
+        fprintf(stderr, "Renderer creation failed: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
+
+    /* Initialize the dot grid */
+    initialize_grid();
+
+    /* Main event loop */
     bool running = true;
     SDL_Event event;
-    while (running) {
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) running = false;
-            else handle_mouse_event(&event);
+
+    while (running)
+    {
+        /* Process all pending events */
+        while (SDL_PollEvent(&event))
+        {
+            if (event.type == SDL_QUIT)
+            {
+                running = false;
+            }
+            else
+            {
+                handle_mouse_event(&event);
+            }
         }
 
-        update_dots();
+        /* Update physics simulation */
+        update_physics();
 
-        SDL_SetRenderDrawColor(renderer, backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
+        /* Render frame */
+        SDL_SetRenderDrawColor(
+            renderer,
+            BACKGROUND_COLOR_R,
+            BACKGROUND_COLOR_G,
+            BACKGROUND_COLOR_B,
+            BACKGROUND_COLOR_A);
         SDL_RenderClear(renderer);
-        render_dots(renderer);
+        render_grid(renderer);
         SDL_RenderPresent(renderer);
 
-        SDL_Delay(16);
+        /* Maintain ~60 FPS */
+        SDL_Delay(FRAME_DELAY_MS);
     }
 
+    /* Cleanup resources */
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
-    return 0;
+
+    return EXIT_SUCCESS;
 }
