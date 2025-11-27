@@ -5,6 +5,13 @@
 dot_matrix_sheet
 ball_sheet
 
+# WebAssembly build artifacts
+*.wasm
+*.js
+*.html
+*.data
+dist/
+
 # Object files
 *.o
 *.obj

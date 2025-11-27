@@ -1,0 +1,75 @@
+name: Build and Deploy to GitHub Pages
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+    group: "pages"
+    cancel-in-progress: false
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Setup Emscripten
+              uses: mymindstorm/setup-emsdk@v14
+              with:
+                  version: "latest"
+
+            - name: Verify Emscripten installation
+              run: emcc --version
+
+            - name: Build WebAssembly
+              run: |
+                  emcc dot_matrix_sheet.c -o dot_matrix_sheet.html \
+                    -s USE_SDL=2 \
+                    -s WASM=1 \
+                    -s ALLOW_MEMORY_GROWTH=1 \
+                    -O3 \
+                    --shell-file shell_minimal.html
+
+            - name: Create index.html (fallback if no shell file)
+              run: |
+                  if [ ! -f shell_minimal.html ]; then
+                    emcc dot_matrix_sheet.c -o index.html \
+                      -s USE_SDL=2 \
+                      -s WASM=1 \
+                      -s ALLOW_MEMORY_GROWTH=1 \
+                      -O3
+                  else
+                    mv dot_matrix_sheet.html index.html
+                  fi
+
+            - name: Create deployment directory
+              run: |
+                  mkdir -p dist
+                  cp index.html dist/ || cp dot_matrix_sheet.html dist/index.html
+                  cp dot_matrix_sheet.js dist/ 2>/dev/null || true
+                  cp dot_matrix_sheet.wasm dist/ 2>/dev/null || true
+                  cp *.data dist/ 2>/dev/null || true
+                  ls -la dist/
+
+            - name: Setup Pages
+              uses: actions/configure-pages@v4
+
+            - name: Upload artifact
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: "./dist"
+
+            - name: Deploy to GitHub Pages
+              id: deployment
+              uses: actions/deploy-pages@v4
