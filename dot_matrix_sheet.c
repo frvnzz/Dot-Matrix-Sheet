@@ -3,6 +3,10 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 /* Window config */
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
@@ -63,6 +67,9 @@ typedef struct
 /* Global State */
 static Dot g_dots[GRID_ROWS][GRID_COLS];
 static DragState g_drag_state = {false, -1, -1};
+static SDL_Window *g_window = NULL;
+static SDL_Renderer *g_renderer = NULL;
+static bool g_running = true;
 
 /* Function Prototypes */
 static void initialize_grid(void);
@@ -73,6 +80,7 @@ static void render_grid(SDL_Renderer *renderer);
 static void handle_mouse_event(const SDL_Event *event);
 static bool find_dot_at_position(int mouse_x, int mouse_y, int *row, int *col);
 static void draw_filled_circle(SDL_Renderer *renderer, int center_x, int center_y, int radius);
+static void main_loop(void);
 
 /**
  * Initializes the dot grid with evenly spaced dots centered in the window.
@@ -341,6 +349,47 @@ static void handle_mouse_event(const SDL_Event *event)
  *
  * @return EXIT_SUCCESS on successful execution, EXIT_FAILURE on error
  */
+
+/**
+ * Main loop iteration function.
+ * Processes events, updates physics, and renders the frame.
+ * This function is called repeatedly either by the native loop or by Emscripten.
+ */
+static void main_loop(void)
+{
+    SDL_Event event;
+
+    /* Process all pending events */
+    while (SDL_PollEvent(&event))
+    {
+        if (event.type == SDL_QUIT)
+        {
+            g_running = false;
+#ifdef __EMSCRIPTEN__
+            emscripten_cancel_main_loop();
+#endif
+        }
+        else
+        {
+            handle_mouse_event(&event);
+        }
+    }
+
+    /* Update physics simulation */
+    update_physics();
+
+    /* Render frame */
+    SDL_SetRenderDrawColor(
+        g_renderer,
+        BACKGROUND_COLOR_R,
+        BACKGROUND_COLOR_G,
+        BACKGROUND_COLOR_B,
+        BACKGROUND_COLOR_A);
+    SDL_RenderClear(g_renderer);
+    render_grid(g_renderer);
+    SDL_RenderPresent(g_renderer);
+}
+
 int main(void)
 {
     /* Initialize SDL video subsystem */
@@ -351,7 +400,7 @@ int main(void)
     }
 
     /* Create window */
-    SDL_Window *window = SDL_CreateWindow(
+    g_window = SDL_CreateWindow(
         WINDOW_TITLE,
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
@@ -359,7 +408,7 @@ int main(void)
         WINDOW_HEIGHT,
         SDL_WINDOW_SHOWN);
 
-    if (!window)
+    if (!g_window)
     {
         fprintf(stderr, "Window creation failed: %s\n", SDL_GetError());
         SDL_Quit();
@@ -367,15 +416,15 @@ int main(void)
     }
 
     /* Create renderer with hardware acceleration */
-    SDL_Renderer *renderer = SDL_CreateRenderer(
-        window,
+    g_renderer = SDL_CreateRenderer(
+        g_window,
         -1,
         SDL_RENDERER_ACCELERATED);
 
-    if (!renderer)
+    if (!g_renderer)
     {
         fprintf(stderr, "Renderer creation failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
+        SDL_DestroyWindow(g_window);
         SDL_Quit();
         return EXIT_FAILURE;
     }
@@ -383,46 +432,21 @@ int main(void)
     /* Initialize the dot grid */
     initialize_grid();
 
-    /* Main event loop */
-    bool running = true;
-    SDL_Event event;
-
-    while (running)
+#ifdef __EMSCRIPTEN__
+    /* Use Emscripten's main loop for browser compatibility */
+    emscripten_set_main_loop(main_loop, 0, 1);
+#else
+    /* Native main event loop */
+    while (g_running)
     {
-        /* Process all pending events */
-        while (SDL_PollEvent(&event))
-        {
-            if (event.type == SDL_QUIT)
-            {
-                running = false;
-            }
-            else
-            {
-                handle_mouse_event(&event);
-            }
-        }
-
-        /* Update physics simulation */
-        update_physics();
-
-        /* Render frame */
-        SDL_SetRenderDrawColor(
-            renderer,
-            BACKGROUND_COLOR_R,
-            BACKGROUND_COLOR_G,
-            BACKGROUND_COLOR_B,
-            BACKGROUND_COLOR_A);
-        SDL_RenderClear(renderer);
-        render_grid(renderer);
-        SDL_RenderPresent(renderer);
-
-        /* Maintain ~60 FPS */
+        main_loop();
         SDL_Delay(FRAME_DELAY_MS);
     }
+#endif
 
     /* Cleanup resources */
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
+    SDL_DestroyRenderer(g_renderer);
+    SDL_DestroyWindow(g_window);
     SDL_Quit();
 
     return EXIT_SUCCESS;
