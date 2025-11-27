@@ -7,10 +7,12 @@ ball_sheet
 
 # WebAssembly build artifacts
 *.wasm
-*.js
-*.html
+dot_matrix_sheet.js
 *.data
 dist/
+
+# Allow our custom index.html
+!index.html
 
 # Object files
 *.o

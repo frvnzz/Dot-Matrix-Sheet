@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dot Matrix Sheet</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #ffffff;
+        }
+
+        h1 {
+            margin: 20px 0;
+            font-size: 2em;
+            font-weight: 300;
+        }
+
+        #canvas-container {
+            position: relative;
+            margin: 20px;
+        }
+
+        canvas {
+            border: 1px solid #444;
+            border-radius: 4px;
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        #status {
+            margin: 20px;
+            padding: 10px 20px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        #status.ready {
+            background-color: #1a4d1a;
+        }
+
+        #status.error {
+            background-color: #4d1a1a;
+        }
+
+        .info {
+            margin-top: 20px;
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Dot Matrix Sheet</h1>
+    <div id="status">Loading...</div>
+    <div id="canvas-container">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+    </div>
+    <div class="info">
+        Click and drag dots to create wave effects
+    </div>
+
+    <script type='text/javascript'>
+        var statusElement = document.getElementById('status');
+        var canvasElement = document.getElementById('canvas');
+
+        var Module = {
+            preRun: [],
+            postRun: [],
+            print: (function () {
+                return function (text) {
+                    console.log(text);
+                };
+            })(),
+            printErr: function (text) {
+                console.error(text);
+            },
+            canvas: canvasElement,
+            setStatus: function (text) {
+                if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+                if (text === Module.setStatus.last.text) return;
+
+                var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+                var now = Date.now();
+
+                if (m && now - Module.setStatus.last.time < 30) return;
+                Module.setStatus.last.time = now;
+                Module.setStatus.last.text = text;
+
+                if (m) {
+                    text = m[1];
+                    statusElement.innerHTML = text + ' (' + m[2] + '/' + m[4] + ')';
+                } else {
+                    statusElement.innerHTML = text;
+                }
+
+                if (text === '') {
+                    statusElement.innerHTML = 'Ready!';
+                    statusElement.className = 'ready';
+                }
+            },
+            totalDependencies: 0,
+            monitorRunDependencies: function (left) {
+                this.totalDependencies = Math.max(this.totalDependencies, left);
+                Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
+            },
+            onRuntimeInitialized: function () {
+                statusElement.innerHTML = 'Ready!';
+                statusElement.className = 'ready';
+            }
+        };
+
+        Module.setStatus('Downloading...');
+
+        window.onerror = function (event) {
+            Module.setStatus('Exception thrown, see JavaScript console');
+            statusElement.className = 'error';
+            Module.setStatus = function (text) {
+                if (text) {
+                    console.error('[post-exception status] ' + text);
+                }
+            };
+        };
+    </script>
+    <script async type="text/javascript" src="dot_matrix_sheet.js"></script>
+</body>
+
+</html>

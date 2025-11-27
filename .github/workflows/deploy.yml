@@ -32,20 +32,21 @@ jobs:
             - name: Verify Emscripten installation
               run: emcc --version
 
-            - name: Build WebAssembly
+            - name: Build WebAssembly (JS and WASM only)
               run: |
-                  emcc dot_matrix_sheet.c -o index.html \
+                  emcc dot_matrix_sheet.c -o dot_matrix_sheet.js \
                     -s USE_SDL=2 \
                     -s WASM=1 \
                     -s ALLOW_MEMORY_GROWTH=1 \
+                    -s EXPORTED_RUNTIME_METHODS='["callMain"]' \
                     -O3
 
             - name: Create deployment directory
               run: |
                   mkdir -p dist
                   cp index.html dist/
-                  cp index.js dist/
-                  cp index.wasm dist/
+                  cp dot_matrix_sheet.js dist/
+                  cp dot_matrix_sheet.wasm dist/
                   ls -la dist/
 
             - name: Setup Pages
